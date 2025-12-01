@@ -1,17 +1,17 @@
-// /api/keep/notes.js
-// Put this file in: drflex-proxy/api/keep/notes.js
+// /api/keep/create.js
+// Put this file in: drflex-proxy/api/keep/create.js
 
 export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  if (req.method !== 'GET') {
+  if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
@@ -22,32 +22,42 @@ export default async function handler(req, res) {
     }
 
     const token = authHeader.split(' ')[1];
+    const { title, body } = req.body;
 
-    // Fetch from Google Keep API
+    // Create note in Google Keep
     const response = await fetch(
       'https://keep.googleapis.com/v1/notes',
       {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-        }
+        },
+        body: JSON.stringify({
+          title: title || '',
+          body: {
+            text: {
+              text: body || ''
+            }
+          }
+        })
       }
     );
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('Google Keep API error:', error);
+      console.error('Google Keep create error:', error);
       return res.status(response.status).json({ 
-        error: 'Failed to fetch notes',
+        error: 'Failed to create note',
         details: error 
       });
     }
 
     const data = await response.json();
-    return res.status(200).json({ notes: data.notes || [] });
+    return res.status(200).json(data);
 
   } catch (error) {
-    console.error('Keep notes error:', error);
+    console.error('Keep create error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
