@@ -1,67 +1,74 @@
-// DrFlex.js
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// /api/drflex.js
+export default async function handler(req, res) {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
 
-const CHAT_HISTORY_KEY = 'drflex_chat_history';
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
 
-const DRFLEX_PERSONALITY = `
-You are Dr Flex: motivational, funny, supportive, encouraging, no-bullshit. 
-You are a coach, comedian, and best friend all in one. 
-Always maintain this personality in your replies. Keep responses under 100 words.
-`;
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-export async function sendToDrFlex(userMessage) {
   try {
-    let historyJSON = await AsyncStorage.getItem(CHAT_HISTORY_KEY);
-    let history = historyJSON ? JSON.parse(historyJSON) : [];
+    const { personality, history } = req.body;
 
-    history.push({ role: 'user', content: userMessage });
+    if (!history || !Array.isArray(history)) {
+      return res.status(400).json({ error: 'Invalid request: history required' });
+    }
 
-    const requestBody = {
-      personality: DRFLEX_PERSONALITY,
-      history: history
-    };
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-    console.log('Sending to DrFlex API...');
-    
-    const response = await fetch('https://drflex-proxy.vercel.app/api/drflex', {
+    if (!OPENAI_API_KEY) {
+      console.error('Missing OPENAI_API_KEY');
+      return res.status(500).json({ error: 'Server configuration error: Missing API key' });
+    }
+
+    const messages = [
+      { role: 'system', content: personality || 'You are a helpful assistant.' },
+      ...history.slice(-10)
+    ];
+
+    console.log('Calling OpenAI API...');
+
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
       },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: messages,
+        max_tokens: 200,
+        temperature: 0.8
+      })
     });
 
-    console.log('Response status:', response.status);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log('Error response:', errorText);
-      throw new Error(`API error: ${response.status}`);
+    if (!openaiResponse.ok) {
+      const errorText = await openaiResponse.text();
+      console.error('OpenAI error:', errorText);
+      return res.status(500).json({ 
+        error: 'OpenAI API error',
+        details: errorText
+      });
     }
 
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      const text = await response.text();
-      console.log('Non-JSON response:', text);
-      throw new Error('Server returned non-JSON response');
-    }
+    const data = await openaiResponse.json();
+    const reply = data.choices?.[0]?.message?.content || 'No response';
 
-    const data = await response.json();
-    console.log('Success response:', data);
-    
-    const reply = data.reply || "Hmm, something went wrong. Try again?";
+    console.log('Success! Reply:', reply);
 
-    history.push({ role: 'assistant', content: reply });
-    await AsyncStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(history));
+    return res.status(200).json({ reply });
 
-    return reply;
-  } catch (err) {
-    console.log('DrFlex error:', err);
-    return "Oops, I hit a snag. Try again!";
+  } catch (error) {
+    console.error('Handler error:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
-}
-
-export async function clearChatHistory() {
-  await AsyncStorage.removeItem(CHAT_HISTORY_KEY);
 }
