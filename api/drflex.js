@@ -1,4 +1,8 @@
+// /api/drflex.js
+// This file goes at: drflex-proxy/api/drflex.js
+
 export default async function handler(req, res) {
+  // CRITICAL: Set JSON content type first
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -16,19 +20,22 @@ export default async function handler(req, res) {
     const { personality, history } = req.body;
 
     if (!history || !Array.isArray(history)) {
-      return res.status(400).json({ error: 'Invalid history' });
+      return res.status(400).json({ error: 'Invalid request: history required' });
     }
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
     if (!OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'Missing API key' });
+      console.error('Missing OPENAI_API_KEY');
+      return res.status(500).json({ error: 'Server configuration error: Missing API key' });
     }
 
     const messages = [
-      { role: 'system', content: personality || 'You are helpful.' },
+      { role: 'system', content: personality || 'You are a helpful assistant.' },
       ...history.slice(-10)
     ];
+
+    console.log('Calling OpenAI API...');
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -46,15 +53,25 @@ export default async function handler(req, res) {
 
     if (!openaiResponse.ok) {
       const errorText = await openaiResponse.text();
-      return res.status(500).json({ error: 'OpenAI error', details: errorText });
+      console.error('OpenAI error:', errorText);
+      return res.status(500).json({ 
+        error: 'OpenAI API error',
+        details: errorText
+      });
     }
 
     const data = await openaiResponse.json();
     const reply = data.choices?.[0]?.message?.content || 'No response';
 
+    console.log('Success! Reply:', reply);
+
     return res.status(200).json({ reply });
 
   } catch (error) {
-    return res.status(500).json({ error: 'Server error', message: error.message });
+    console.error('Handler error:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 }
