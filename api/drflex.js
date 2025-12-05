@@ -28,36 +28,33 @@ export default async function handler(req, res) {
 
     const systemPrompt = `${personality || 'You are helpful.'}
 
-IMPORTANT APP CONTROL INSTRUCTIONS:
+CRITICAL APP CONTROL INSTRUCTIONS - YOU MUST FOLLOW THESE:
 
 You can control the Dr Flex app by adding ACTION commands to your responses.
 
 AVAILABLE ACTIONS:
 1. Add a goal: [ACTION:{"type":"ADD_GOAL","text":"goal description"}]
-2. Add multiple goals at once: [ACTION:{"type":"ADD_GOAL","text":"goal 1"}][ACTION:{"type":"ADD_GOAL","text":"goal 2"}]
-3. Add a todo: [ACTION:{"type":"ADD_TODO","text":"task description"}]
-4. Add learning resource: [ACTION:{"type":"ADD_LEARNING","title":"resource name","url":"https://..."}]
-5. Add event: [ACTION:{"type":"ADD_EVENT","title":"event name","url":"https://...","description":"details"}]
-6. Clear all goals: [ACTION:{"type":"CLEAR_GOALS"}]
-7. Clear all todos: [ACTION:{"type":"CLEAR_TODO"}]
+2. Add a todo: [ACTION:{"type":"ADD_TODO","text":"task description"}]
+3. Add learning resource: [ACTION:{"type":"ADD_LEARNING","title":"resource name","url":"https://..."}]
+4. Add event: [ACTION:{"type":"ADD_EVENT","title":"event name","url":"https://...","description":"details"}]
 
-WHEN TO USE ACTIONS:
-- User says "add X to my goals" → Use ADD_GOAL action
-- User lists multiple things (separated by newlines or commas) → Add each as a separate action
-- User pastes a list of goals → CRITICAL: Split by newlines and add each line as separate ADD_GOAL
-- User asks you to find learning resources → Search mentally and add multiple ADD_LEARNING with real URLs
-- User describes their interests for events → Add 20 events related to those interests
+MANDATORY BEHAVIOR:
+- When user asks to populate learning tab: Generate EXACTLY 20 ADD_LEARNING actions with REAL URLs
+- When user asks to populate events: Generate EXACTLY 20 ADD_EVENT actions with REAL URLs
+- When user lists goals: Generate one ADD_GOAL action for EACH goal
+- ALWAYS put actions AFTER your text response
+- Use REAL, working URLs (not placeholders)
 
-IMPORTANT RULES:
-1. ALWAYS add actions AFTER your conversational text
-2. You can add MULTIPLE actions in one response
-3. For multi-line input, split by newlines (\n) and create one action per line
-4. When adding learning resources, use real, relevant URLs (coursera, youtube, blogs, etc)
-5. When user gives you their interests, immediately populate 20 events or learning items
-6. Parse multi-line input as separate items - each line = one item
+CRITICAL: If user asks for 20 items, you MUST generate all 20 actions in ONE response.
 
-Example response:
-"Got it! I've added those 3 goals for you. Let's crush them! [ACTION:{"type":"ADD_GOAL","text":"Learn Python"}][ACTION:{"type":"ADD_GOAL","text":"Build an app"}][ACTION:{"type":"ADD_GOAL","text":"Get fit"}]"`;
+Example for learning:
+"Here are 20 resources! [ACTION:{"type":"ADD_LEARNING","title":"Overcome Self-Doubt","url":"https://www.mindtools.com/blog/overcome-doubt"}][ACTION:{"type":"ADD_LEARNING","title":"Self-Compassion Guide","url":"https://www.psychologytoday.com/blog/self-compassion"}]..." (continue for all 20)
+
+Example for goals:
+User: "Improve areas: doubt, self-compassion, preparation"
+You: "Got it! Adding those goals now. [ACTION:{"type":"ADD_GOAL","text":"Eliminate doubt"}][ACTION:{"type":"ADD_GOAL","text":"Practice self-compassion"}][ACTION:{"type":"ADD_GOAL","text":"Improve preparation skills"}]"
+
+DO NOT just say you'll add them - you MUST include the [ACTION:...] commands.`;
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -73,8 +70,8 @@ Example response:
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: messages,
-        max_tokens: 500,
-        temperature: 0.8
+        max_tokens: 2000,
+        temperature: 0.7
       })
     });
 
