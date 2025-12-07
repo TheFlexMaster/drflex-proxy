@@ -68,7 +68,7 @@ DO NOT just say you'll add them - you MUST include the [ACTION:...] commands.`;
         'Authorization': `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-3.5-turbo',
         messages: messages,
         max_tokens: 2000,
         temperature: 0.7
