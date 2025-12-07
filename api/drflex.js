@@ -1,5 +1,6 @@
 // /api/drflex.js
 export default async function handler(req, res) {
+  // CORS
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -21,11 +22,13 @@ export default async function handler(req, res) {
     }
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
     if (!OPENAI_API_KEY) {
       return res.status(500).json({ error: 'Missing API key' });
     }
 
+    // ---------------------------
+    // AI SYSTEM INSTRUCTIONS
+    // ---------------------------
     const systemPrompt = `${personality || 'You are helpful.'}
 
 CRITICAL APP CONTROL INSTRUCTIONS - YOU MUST FOLLOW THESE:
@@ -38,29 +41,26 @@ AVAILABLE ACTIONS:
 3. Add learning resource: [ACTION:{"type":"ADD_LEARNING","title":"resource name","url":"https://..."}]
 4. Add event: [ACTION:{"type":"ADD_EVENT","title":"event name","url":"https://...","description":"details"}]
 
-MANDATORY BEHAVIOR:
-- When user asks to populate learning tab: Generate EXACTLY 20 ADD_LEARNING actions with REAL URLs
-- When user asks to populate events: Generate EXACTLY 20 ADD_EVENT actions with REAL URLs
-- When user lists goals: Generate one ADD_GOAL action for EACH goal
-- ALWAYS put actions AFTER your text response
-- Use REAL, working URLs (not placeholders)
+MANDATORY RULES:
+- When the user wants learning: Generate EXACTLY 20 learning links with real URLs
+- When the user wants events: Generate EXACTLY 20 event links with real URLs
+- When user sends many goals: Add EACH one separately
+- Always place actions AFTER your main text
+- Use only real working URLs (blogs, articles, Eventbrite, etc.)
 
-CRITICAL: If user asks for 20 items, you MUST generate all 20 actions in ONE response.
+CRITICAL: ALL 20 items must be returned in ONE single message.
 
-Example for learning:
-"Here are 20 resources! [ACTION:{"type":"ADD_LEARNING","title":"Overcome Self-Doubt","url":"https://www.mindtools.com/blog/overcome-doubt"}][ACTION:{"type":"ADD_LEARNING","title":"Self-Compassion Guide","url":"https://www.psychologytoday.com/blog/self-compassion"}]..." (continue for all 20)
+NEVER just say "I will add them" — you must output the [ACTION:...] blocks.`;
 
-Example for goals:
-User: "Improve areas: doubt, self-compassion, preparation"
-You: "Got it! Adding those goals now. [ACTION:{"type":"ADD_GOAL","text":"Eliminate doubt"}][ACTION:{"type":"ADD_GOAL","text":"Practice self-compassion"}][ACTION:{"type":"ADD_GOAL","text":"Improve preparation skills"}]"
-
-DO NOT just say you'll add them - you MUST include the [ACTION:...] commands.`;
-
+    // Limit history so the model doesn’t waste tokens
     const messages = [
       { role: 'system', content: systemPrompt },
       ...history.slice(-10)
     ];
 
+    // ---------------------------
+    // OPENAI CALL
+    // ---------------------------
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -68,16 +68,19 @@ DO NOT just say you'll add them - you MUST include the [ACTION:...] commands.`;
         'Authorization': `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-3.5-turbo',  // cheap model
         messages: messages,
-        max_tokens: 2000,
+        max_tokens: 600,         // SAFE TOKEN LIMIT
         temperature: 0.7
       })
     });
 
     if (!openaiResponse.ok) {
       const errorText = await openaiResponse.text();
-      return res.status(500).json({ error: 'OpenAI error', details: errorText });
+      return res.status(500).json({
+        error: 'OpenAI error',
+        details: errorText
+      });
     }
 
     const data = await openaiResponse.json();
@@ -86,6 +89,9 @@ DO NOT just say you'll add them - you MUST include the [ACTION:...] commands.`;
     return res.status(200).json({ reply });
 
   } catch (error) {
-    return res.status(500).json({ error: 'Server error', message: error.message });
+    return res.status(500).json({
+      error: 'Server error',
+      message: error.message
+    });
   }
 }
