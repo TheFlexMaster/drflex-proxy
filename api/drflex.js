@@ -1,4 +1,4 @@
-// /api/drflex.js (UPDATED FOR NEW OPENAI API)
+// /api/drflex.js (FINAL VERSION — matches your DrFlex.js perfectly)
 export default async function handler(req, res) {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -12,64 +12,56 @@ export default async function handler(req, res) {
 
   try {
     const { personality, history } = req.body;
-
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
     if (!OPENAI_API_KEY) {
       return res.status(500).json({ error: "Missing API key" });
     }
 
-    const systemPrompt = `${personality}
-
-You output ACTION commands like:
-
-[ACTION:{"type":"ADD_GOAL","text":"..."}]
-
-RULES:
-• When user sends multiple goals, add EACH one separately  
-• When user requests events/learning: ALWAYS output EXACTLY 20 items  
-• Use REAL URLs only  
-• Always return actions AFTER your text`;
+    const systemPrompt = personality;
 
     const messages = [
       { role: "system", content: systemPrompt },
       ...history.map(h => ({ role: h.role, content: h.content }))
     ];
 
-    const openaiResponse = await fetch("https://api.openai.com/v1/responses", {
+    // New OpenAI API endpoint + model
+    const aiResp = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Authorization": `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-4o-mini",      // cheap + fast
         input: messages,
         max_output_tokens: 2000
-      }),
+      })
     });
 
-    const data = await openaiResponse.json();
+    const data = await aiResp.json();
 
-    if (!openaiResponse.ok) {
+    if (!aiResp.ok) {
       return res.status(500).json({
-        error: "OpenAI failed",
+        error: "OpenAI error",
         details: data
       });
     }
 
+    // Extract AI text
     const raw = data.output?.[0]?.content?.[0]?.text || "";
 
     // Extract actions
     const actions = [];
-    const regex = /\[ACTION:(\{.*?\})\]/g;
+    const regex = /\[ACTION:(\{.*?})]/g;
     let match;
-
     while ((match = regex.exec(raw)) !== null) {
       try {
         actions.push(JSON.parse(match[1]));
       } catch {}
     }
 
+    // Remove the action blocks from the human-visible text
     const cleaned = raw.replace(regex, "").trim();
 
     return res.status(200).json({
