@@ -1,75 +1,94 @@
-// /api/drflex.js (FINAL VERSION — matches your DrFlex.js perfectly)
+// api/drflex.js - CORRECT VERSION FOR GPT-3.5-TURBO
 export default async function handler(req, res) {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
-
+  
   if (req.method === "OPTIONS") return res.status(200).end();
+  
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
     const { personality, history } = req.body;
+    
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
     if (!OPENAI_API_KEY) {
       return res.status(500).json({ error: "Missing API key" });
     }
 
-    const systemPrompt = personality;
-
+    // Build messages array for OpenAI
+    const systemPrompt = personality || "You are Dr Flex, a motivational coach.";
     const messages = [
       { role: "system", content: systemPrompt },
-      ...history.map(h => ({ role: h.role, content: h.content }))
+      ...history.map(h => ({ 
+        role: h.role, 
+        content: h.content 
+      }))
     ];
 
-    // New OpenAI API endpoint + model
-    const aiResp = await fetch("https://api.openai.com/v1/responses", {
+    console.log('🔵 Sending to OpenAI...');
+
+    // CORRECT OPENAI ENDPOINT!
+    const aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",      // cheap + fast
-        input: messages,
-        max_output_tokens: 2000
+        model: "gpt-3.5-turbo",  // GPT-3.5 as requested!
+        messages: messages,
+        max_tokens: 2000,
+        temperature: 0.8
       })
     });
 
     const data = await aiResp.json();
 
     if (!aiResp.ok) {
+      console.error('❌ OpenAI error:', data);
       return res.status(500).json({
         error: "OpenAI error",
         details: data
       });
     }
 
-    // Extract AI text
-    const raw = data.output?.[0]?.content?.[0]?.text || "";
+    // CORRECT RESPONSE FORMAT!
+    const raw = data.choices[0]?.message?.content || "";
+    
+    console.log('✅ Got reply from OpenAI');
 
-    // Extract actions
+    // Parse actions from <ACTION> blocks (not [ACTION:])
     const actions = [];
-    const regex = /\[ACTION:(\{.*?})]/g;
+    const actionRegex = /<ACTION>([\s\S]*?)<\/ACTION>/g;
     let match;
-    while ((match = regex.exec(raw)) !== null) {
+
+    while ((match = actionRegex.exec(raw)) !== null) {
       try {
-        actions.push(JSON.parse(match[1]));
-      } catch {}
+        const actionData = JSON.parse(match[1].trim());
+        if (actionData.type && actionData.items && Array.isArray(actionData.items)) {
+          actions.push(actionData);
+        }
+      } catch (e) {
+        console.log('⚠️ Failed to parse action block:', e);
+      }
     }
 
-    // Remove the action blocks from the human-visible text
-    const cleaned = raw.replace(regex, "").trim();
+    // Remove action blocks from visible text
+    const cleaned = raw.replace(/<ACTION>[\s\S]*?<\/ACTION>/g, '').trim();
+
+    console.log('📤 Sending reply with', actions.length, 'actions');
 
     return res.status(200).json({
       reply: cleaned,
-      actions
+      actions: actions
     });
 
   } catch (err) {
+    console.error('💥 Server error:', err);
     return res.status(500).json({
       error: "Server crashed",
       details: err.toString()
