@@ -1,4 +1,4 @@
-// api/drflex.js - WITH BRAVE SEARCH
+// api/drflex.js - FINAL VERSION WITH BRAVE SEARCH
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -11,14 +11,10 @@ export default async function handler(req, res) {
   try {
     const { personality, history } = req.body;
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    const BRAVE_API_KEY = process.env.BRAVE_API_KEY; // NEW
+    const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 
     if (!OPENAI_API_KEY) {
       return res.status(500).json({ error: 'Missing OpenAI API key' });
-    }
-
-    if (!BRAVE_API_KEY) {
-      return res.status(500).json({ error: 'Missing Brave API key' });
     }
 
     const messages = [
@@ -48,38 +44,39 @@ export default async function handler(req, res) {
 
     const raw = data.choices[0]?.message?.content || '';
 
-    // Extract actions from AI response
+    // Extract actions
     const actions = [];
-    const regex = /\{\s*"type"\s*:\s*"(request_events|request_learning|add_goals|add_todos)"[\s\S]*?\}/g;
-
+    const regex = /\{"type"\s*:\s*"(request_events|request_learning|add_goals|add_todos)"\s*,[\s\S]*?\}/g;
     let match;
+
     while ((match = regex.exec(raw)) !== null) {
       try {
         actions.push(JSON.parse(match[0]));
-      } catch (e) {}
+      } catch (e) {
+        console.log('Parse error:', e);
+      }
     }
 
-    // Process search requests
+    // Process search requests if Brave API key exists
     const finalActions = [];
     
     for (const action of actions) {
-      // Pass through goals and todos as-is (they work!)
+      // Pass through goals and todos
       if (action.type === 'add_goals' || action.type === 'add_todos') {
         finalActions.push(action);
         continue;
       }
 
       // Handle learning search requests
-      if (action.type === 'request_learning') {
-        const topics = action.query.topics || [];
+      if (action.type === 'request_learning' && BRAVE_API_KEY) {
+        const topics = action.query?.topics || [];
         const learningItems = [];
 
-        for (const topic of topics.slice(0, 10)) { // Max 10 topics
+        for (const topic of topics.slice(0, 10)) {
           try {
-            // Search Brave for learning resources
-            const searchQuery = `${topic} tutorial guide article site:psychologytoday.com OR site:hbr.org OR site:medium.com OR site:ted.com`;
+            const searchQuery = `${topic} tutorial guide free resources site:psychologytoday.com OR site:hbr.org OR site:medium.com OR site:ted.com`;
             const braveResp = await fetch(
-              `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(searchQuery)}&count=3`,
+              `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(searchQuery)}&count=2`,
               {
                 headers: {
                   'Accept': 'application/json',
@@ -92,7 +89,6 @@ export default async function handler(req, res) {
               const braveData = await braveResp.json();
               const results = braveData.web?.results || [];
               
-              // Take top result
               if (results.length > 0) {
                 learningItems.push({
                   title: results[0].title || topic,
@@ -101,7 +97,7 @@ export default async function handler(req, res) {
               }
             }
           } catch (e) {
-            console.error('Brave search error for', topic, e);
+            console.log('Brave search error:', e);
           }
         }
 
@@ -115,17 +111,16 @@ export default async function handler(req, res) {
       }
 
       // Handle event search requests
-      if (action.type === 'request_events') {
-        const topics = action.query.topics || [];
-        const location = action.query.location || 'London';
+      if (action.type === 'request_events' && BRAVE_API_KEY) {
+        const topics = action.query?.topics || [];
+        const location = action.query?.location || 'London';
         const eventItems = [];
 
-        for (const topic of topics.slice(0, 10)) { // Max 10 topics
+        for (const topic of topics.slice(0, 10)) {
           try {
-            // Search for events
             const searchQuery = `${topic} events ${location} site:eventbrite.co.uk OR site:meetup.com OR site:dice.fm`;
             const braveResp = await fetch(
-              `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(searchQuery)}&count=3`,
+              `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(searchQuery)}&count=2`,
               {
                 headers: {
                   'Accept': 'application/json',
@@ -138,7 +133,6 @@ export default async function handler(req, res) {
               const braveData = await braveResp.json();
               const results = braveData.web?.results || [];
               
-              // Take top result
               if (results.length > 0) {
                 eventItems.push({
                   title: results[0].title || `${topic} Event`,
@@ -148,7 +142,7 @@ export default async function handler(req, res) {
               }
             }
           } catch (e) {
-            console.error('Brave search error for event', topic, e);
+            console.log('Brave search error:', e);
           }
         }
 
@@ -167,9 +161,11 @@ export default async function handler(req, res) {
     actions.forEach(a => {
       cleaned = cleaned.replace(JSON.stringify(a), '');
     });
+    cleaned = cleaned.replace(/\*\*ACTION\*\*/gi, '');
+    cleaned = cleaned.trim();
 
     return res.status(200).json({ 
-      reply: cleaned.trim(), 
+      reply: cleaned, 
       actions: finalActions 
     });
 
