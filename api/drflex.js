@@ -1,4 +1,4 @@
-// api/drflex.js - COMPLETE WITH BRAVE SEARCH
+// api/drflex.js - SAFE VERSION (won't crash)
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -8,18 +8,20 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+  const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
+
+  console.log('=== START ===');
+  console.log('Has OpenAI key:', !!OPENAI_API_KEY);
+  console.log('Has Brave key:', !!BRAVE_API_KEY);
+
+  if (!OPENAI_API_KEY) {
+    console.log('ERROR: No OpenAI key');
+    return res.status(500).json({ error: 'Missing OpenAI key' });
+  }
+
   try {
     const { personality, history } = req.body;
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
-
-    console.log('=== VERCEL API START ===');
-    console.log('Has OpenAI key:', !!OPENAI_API_KEY);
-    console.log('Has Brave key:', !!BRAVE_API_KEY);
-
-    if (!OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'Missing OpenAI API key' });
-    }
 
     const messages = [
       { role: 'system', content: personality || 'You are Dr Flex.' },
@@ -42,16 +44,80 @@ export default async function handler(req, res) {
     });
 
     const data = await aiResp.json();
+    
     if (!aiResp.ok) {
-      console.log('OpenAI error:', data);
+      console.log('OpenAI error:', JSON.stringify(data));
       return res.status(500).json({ error: 'OpenAI error', details: data });
     }
 
     const raw = data.choices[0]?.message?.content || '';
-    console.log('AI Response length:', raw.length);
+    console.log('AI response received, length:', raw.length);
 
-    // Extract actions - be more lenient with parsing
+    // Extract actions
     const extractedActions = [];
-    
-    // Split by lines and look for JSON
     const lines = raw.split('\n');
+    
+    for (const line of lines) {
+      let trimmed = line.trim().replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      if (trimmed.startsWith('{') && trimmed.includes('"type"')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (parsed.type) {
+            extractedActions.push(parsed);
+            console.log('Extracted:', parsed.type);
+          }
+        } catch (e) {
+          console.log('Parse failed:', e.message);
+        }
+      }
+    }
+
+    console.log('Extracted actions:', extractedActions.length);
+
+    // Process actions
+    const finalActions = [];
+    
+    for (const action of extractedActions) {
+      try {
+        console.log('Processing:', action.type);
+        
+        // Goals and todos - pass through
+        if (action.type === 'add_goals' || action.type === 'add_todos' || action.type === 'add_to_do') {
+          if (action.type === 'add_to_do') action.type = 'add_todos';
+          finalActions.push(action);
+          console.log('Passed through');
+          continue;
+        }
+
+        // Learning - search Brave
+        if (action.type === 'request_learning') {
+          console.log('Searching for learning...');
+          
+          if (!BRAVE_API_KEY) {
+            console.log('No Brave key!');
+            continue;
+          }
+
+          const topics = action.query?.topics || [];
+          const learningItems = [];
+
+          for (const topic of topics.slice(0, 10)) {
+            try {
+              console.log('Searching:', topic);
+              const searchQuery = `${topic} guide tutorial`;
+              
+              const braveResp = await fetch(
+                `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(searchQuery)}&count=2`,
+                {
+                  headers: {
+                    'Accept': 'application/json',
+                    'X-Subscription-Token': BRAVE_API_KEY
+                  },
+                  signal: AbortSignal.timeout(5000) // 5 second timeout
+                }
+              );
+
+              if (braveResp.ok) {
+                const braveData = await braveResp.json();
+                const results = braveData.web?.results || [];
