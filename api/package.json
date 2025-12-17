@@ -1,0 +1,22 @@
+{
+  "type": "module"
+}
+```
+
+5. Click **"Commit new file"**
+6. **Wait 1 minute** for Vercel to redeploy
+
+---
+
+## 🧪 **THEN TEST:**
+```
+Add learning about Python
+```
+
+**Now Vercel logs should show:**
+```
+START - Has keys: true true
+Calling OpenAI
+Got reply
+Actions: 1
+END - Returning 1
